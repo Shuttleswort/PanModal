@@ -43,6 +43,8 @@ open class PanModalPresentationController: UIPresentationController {
     }
 
     // MARK: - Properties
+    
+    private var isScrollViewUpdating = false
 
     /**
      A flag to track if the presented view is animating
@@ -252,18 +254,14 @@ public extension PanModalPresentationController {
      Transition the PanModalPresentationController
      to the given presentation state
      */
-    func transition(to state: PresentationState) {
-
-        guard presentable?.shouldTransition(to: state) == true
-            else { return }
-
+    func transition(to state: PresentationState, completion: (() -> ())? = nil) {
+        guard presentable?.shouldTransition(to: state) == true else { return }
         presentable?.willTransition(to: state)
-
         switch state {
         case .shortForm:
-            snap(toYPosition: shortFormYPosition)
+            snap(toYPosition: shortFormYPosition, completion: completion)
         case .longForm:
-            snap(toYPosition: longFormYPosition)
+            snap(toYPosition: longFormYPosition, completion: completion)
         }
     }
 
@@ -275,21 +273,36 @@ public extension PanModalPresentationController {
      To avoid this, you can call this method to perform scroll view updates,
      with scroll observation temporarily disabled.
      */
-    func performUpdates(_ updates: () -> Void) {
-
-        guard let scrollView = presentable?.panScrollable
-            else { return }
-
+    func performScrollViewUpdates(_ updates: () -> Void) {
+        beginScrollViewUpdates()
+        updates()
+        endScrollViewUpdates()
+    }
+    
+    func beginScrollViewUpdates() {
+        guard let _ = presentable?.panScrollable else {
+            isScrollViewUpdating = false
+            return
+        }
+        
         // Pause scroll observer
+        isScrollViewUpdating = true
         scrollObserver?.invalidate()
         scrollObserver = nil
-
-        // Perform updates
-        updates()
-
+    }
+    
+    func endScrollViewUpdates() {
+        guard let scrollView = presentable?.panScrollable else {
+            isScrollViewUpdating = false
+            return
+        }
+        
         // Resume scroll observer
+        isScrollViewUpdating = false
         trackScrolling(scrollView)
-        observe(scrollView: scrollView)
+        DispatchQueue.main.async { [weak self] in
+            self?.observe(scrollView: scrollView)
+        }
     }
 
     /**
@@ -305,7 +318,6 @@ public extension PanModalPresentationController {
         observe(scrollView: presentable?.panScrollable)
         configureScrollViewInsets()
     }
-
 }
 
 // MARK: - Presented View Layout Configuration
@@ -454,7 +466,7 @@ private extension PanModalPresentationController {
          Set the appropriate contentInset as the configuration within this class
          offsets it
          */
-        scrollView.contentInset.bottom = presentingViewController.bottomLayoutGuide.length
+        // scrollView.contentInset.bottom = presentingViewController.bottomLayoutGuide.length
 
         /**
          As we adjust the bounds during `handleScrollViewTopBounce`
@@ -639,12 +651,13 @@ private extension PanModalPresentationController {
         return (abs(velocity) - (1000 * (1 - Constants.snapMovementSensitivity))) > 0
     }
 
-    func snap(toYPosition yPos: CGFloat) {
+    func snap(toYPosition yPos: CGFloat, completion: (() -> ())? = nil) {
         PanModalAnimator.animate({ [weak self] in
             self?.adjust(toYPosition: yPos)
             self?.isPresentedViewAnimating = true
         }, config: presentable) { [weak self] didComplete in
             self?.isPresentedViewAnimating = !didComplete
+            completion?()
         }
     }
 
@@ -691,6 +704,9 @@ private extension PanModalPresentationController {
      This allows us to track scrolling without overriding the scrollView delegate
      */
     func observe(scrollView: UIScrollView?) {
+        if isScrollViewUpdating {
+            return
+        }
         scrollObserver?.invalidate()
         scrollObserver = scrollView?.observe(\.contentOffset, options: .old) { [weak self] scrollView, change in
 
@@ -714,7 +730,9 @@ private extension PanModalPresentationController {
      which allows us to seamlessly transition scrolling from the panContainerView to the scrollView
      */
     func didPanOnScrollView(_ scrollView: UIScrollView, change: NSKeyValueObservedChange<CGPoint>) {
-
+        guard let _ = scrollObserver else {
+            return
+        }
         guard
             !presentedViewController.isBeingDismissed,
             !presentedViewController.isBeingPresented

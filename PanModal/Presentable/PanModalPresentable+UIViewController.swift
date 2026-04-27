@@ -26,8 +26,8 @@ public extension PanModalPresentable where Self: UIViewController {
      A function wrapper over the `transition(to state: PanModalPresentationController.PresentationState)`
      function in the PanModalPresentationController.
      */
-    func panModalTransition(to state: PanModalPresentationController.PresentationState) {
-        presentedVC?.transition(to: state)
+    func panModalTransition(to state: PanModalPresentationController.PresentationState, completion: (() -> ())? = nil) {
+        presentedVC?.transition(to: state, completion: completion)
     }
 
     /**
@@ -46,8 +46,16 @@ public extension PanModalPresentable where Self: UIViewController {
 
      To avoid this, you can call this method to perform scroll view updates, with scroll observation temporarily disabled.
      */
-    func panModalPerformUpdates(_ updates: () -> Void) {
-        presentedVC?.performUpdates(updates)
+    func panModalPerformScrollViewUpdates(_ updates: () -> Void) {
+        presentedVC?.performScrollViewUpdates(updates)
+    }
+    
+    func panModalBeginScrollViewUpdates() {
+        presentedVC?.beginScrollViewUpdates()
+    }
+    
+    func panModalEndScrollViewUpdates() {
+        presentedVC?.endScrollViewUpdates()
     }
 
     /**
